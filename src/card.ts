@@ -233,9 +233,20 @@ export class CardManager {
 
     const titleEl = cardEl.createDiv({ cls: "base-board-card-title" });
 
-    // Respect cardTitleProperty if configured — use a frontmatter property
-    // (e.g. "title") as the card heading instead of the filename.
+    // Check frontmatter "title" property first — set by inline card
+    // creation when the original title contains dots (file.basename would
+    // lose everything after the last dot).
     let cardTitle = entry.file?.basename ?? "Untitled";
+    const fmFile = entry.file;
+    if (fmFile instanceof TFile) {
+      const fmTitle =
+        this.view.app.metadataCache.getFileCache(fmFile)?.frontmatter?.title;
+      if (typeof fmTitle === "string" && fmTitle.length > 0) {
+        cardTitle = fmTitle;
+      }
+    }
+
+    // Respect cardTitleProperty if configured — overrides the above.
     const titleProp = this.view.config.get("cardTitleProperty") as
       | string
       | undefined;
@@ -537,13 +548,23 @@ export class CardManager {
       return;
     }
 
+    const hasDots = title.includes(".");
+
     const overrides = (fm: Record<string, unknown>) => {
       fm[groupByProp] = columnName;
       fm[ORDER_PROPERTY] = orderIndex;
+      if (hasDots) {
+        fm.title = title;
+      }
     };
 
+    // createFileForView uses the title as the base filename.  Obsidian
+    // treats the segment after the last "." as the extension, so dots
+    // corrupt the basename.  Pass a dot-free name and rename after.
+    const safeName = hasDots ? title.replace(/\./g, "-") : title;
+
     try {
-      await this.view.createFileForView(title, overrides);
+      await this.view.createFileForView(safeName, overrides);
     } catch (err) {
       new Notice(`Failed to create card: ${String(err)}`);
     }
